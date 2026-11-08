@@ -82,9 +82,29 @@ async fn main() -> std::io::Result<()> {
 
     let assets_dir = PathBuf::from(&cfg.static_dir).join("assets");
 
+    let allowed_origin_override = std::env::var("CORS_ALLOWED_ORIGIN")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
     HttpServer::new(move || {
+        let override_origin = allowed_origin_override.clone();
         let cors = Cors::default()
-            .allow_any_origin()
+            .allowed_origin_fn(move |origin, _req_head| {
+                let Ok(val) = origin.to_str() else {
+                    return false;
+                };
+                if let Some(explicit) = override_origin.as_deref() {
+                    if val == explicit {
+                        return true;
+                    }
+                }
+                val == "http://localhost"
+                    || val.starts_with("http://localhost:")
+                    || val == "http://127.0.0.1"
+                    || val.starts_with("http://127.0.0.1:")
+                    || val.ends_with(".e2b.app")
+            })
             .allowed_methods(vec!["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
             .allowed_headers(vec![
                 header::AUTHORIZATION,

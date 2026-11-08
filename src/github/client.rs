@@ -363,11 +363,24 @@ impl<'a> GitHubClient<'a> {
         repo: &str,
         names: Vec<String>,
     ) -> Result<Vec<String>, ApiError> {
-        let sanitized = names
-            .into_iter()
-            .map(|t| t.trim().to_lowercase().replace(' ', "-"))
-            .filter(|t| !t.is_empty())
-            .collect::<Vec<_>>();
+        let mut sanitized = Vec::new();
+        for raw in names {
+            let mut slug = String::new();
+            let mut prev_hyphen = false;
+            for ch in raw.trim().to_lowercase().chars() {
+                if ch.is_ascii_alphanumeric() {
+                    slug.push(ch);
+                    prev_hyphen = false;
+                } else if !prev_hyphen && !slug.is_empty() {
+                    slug.push('-');
+                    prev_hyphen = true;
+                }
+            }
+            let clean = slug.trim_matches('-').chars().take(50).collect::<String>();
+            if !clean.is_empty() && !sanitized.contains(&clean) {
+                sanitized.push(clean);
+            }
+        }
         let path = format!("/repos/{}/{}/topics", Self::enc(owner), Self::enc(repo));
         let body = TopicsPayload { names: sanitized };
         let (res, _) = self
