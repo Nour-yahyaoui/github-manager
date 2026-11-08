@@ -5,6 +5,7 @@ import App from '../App';
 
 describe('GitHub Manager Fullstack UI Workflows & Accessibility', () => {
   beforeEach(() => {
+    localStorage.removeItem('ghm-onboarding-complete-v1');
     vi.restoreAllMocks();
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
@@ -185,4 +186,56 @@ describe('GitHub Manager Fullstack UI Workflows & Accessibility', () => {
     expect(featuresTab).toHaveAttribute('aria-selected', 'true');
     expect(featuresTab).toHaveFocus();
   });
+  it('shows a connection error and retries authentication', async () => {
+    const user = userEvent.setup();
+    let attempts = 0;
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      if (String(input).includes('/auth/status')) {
+        attempts++;
+        if (attempts === 1) throw new Error('Server offline');
+        return new Response(JSON.stringify({ authenticated: false, token_source: 'none', scopes: [], api_base: 'https://api.github.com' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    render(<App />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Server offline');
+    await user.click(screen.getByRole('button', { name: 'Retry connection' }));
+    await waitFor(() => expect(screen.queryByText('Server offline')).not.toBeInTheDocument());
+    expect(attempts).toBe(2);
+  });
+
+  it('announces a skeleton while the initial connection is pending', () => {
+    vi.mocked(fetch).mockImplementation(() => new Promise(() => {}));
+    render(<App />);
+    expect(screen.getByRole('status', { name: 'Verifying local server status' })).toBeInTheDocument();
+  });
+
+  it('walks through the guide, enters sample data, and can replay it', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const guide = await screen.findByRole('region', { name: 'Getting started guide' });
+    expect(within(guide).getByText('A clearer view of your GitHub work.')).toBeInTheDocument();
+    await user.click(within(guide).getByRole('button', { name: 'Next' }));
+    expect(within(guide).getByText('Start on your terms.')).toBeInTheDocument();
+    await user.click(within(guide).getByRole('button', { name: 'Next' }));
+    await user.click(within(guide).getByRole('button', { name: 'Explore sample data' }));
+    expect(await screen.findByText(/SAMPLE WORKSPACE · DEMO DATA/i)).toBeInTheDocument();
+    expect(localStorage.getItem('ghm-onboarding-complete-v1')).toBe('yes');
+    await user.click(await screen.findByRole('button', { name: 'Getting started' }));
+    expect(screen.getByText('A clearer view of your GitHub work.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Dismiss getting started guide' }));
+    expect(screen.queryByRole('region', { name: 'Getting started guide' })).not.toBeInTheDocument();
+  });
+
+  it('takes the token path without starting a demo', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const guide = await screen.findByRole('region', { name: 'Getting started guide' });
+    await user.click(within(guide).getByRole('button', { name: 'Next' }));
+    await user.click(within(guide).getByRole('button', { name: 'Next' }));
+    await user.click(within(guide).getByRole('button', { name: 'Connect a token' }));
+    expect(screen.getByLabelText('Personal Access Token')).toHaveFocus();
+    expect(screen.queryByText(/SAMPLE WORKSPACE · DEMO DATA/i)).not.toBeInTheDocument();
+  });
+
 });

@@ -15,6 +15,7 @@ import type { Repository } from '../../api/types';
 import { useApp } from '../../context/AppContext';
 import { RepoStateBadges } from '../ui/Badge';
 import { ConfirmDangerModal } from '../ui/ConfirmDangerModal';
+import { Skeleton } from '../ui/Skeleton';
 import { QuickEditDrawer } from './QuickEditDrawer';
 
 type ScopeFilter = 'all' | 'public' | 'private' | 'archived' | 'templates_forks';
@@ -318,9 +319,9 @@ export const RepoLedgerView: React.FC = () => {
       <p className="scroll-hint">Scroll horizontally to see all repository details and actions →</p>
       <div className="table-scroll" tabIndex={0} role="region" aria-label="Repositories table">
         {reposLoading && repos.length === 0 ? (
-          <div className="empty-state">
-            <p>Loading repositories from GitHub REST API…</p>
-          </div>
+          <Skeleton label="Loading repositories" />
+        ) : reposError && repos.length === 0 ? (
+          <div className="empty-state"><h3>Repositories unavailable</h3><p>Try again using the retry button above.</p></div>
         ) : filteredRepos.length === 0 ? (
           <div className="empty-state">
             <BookMarked size={28} style={{ color: 'var(--text-muted)' }} aria-hidden="true" />

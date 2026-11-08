@@ -1017,3 +1017,58 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   .nav-rail, .rail-nav-btn { transition: none; }
 }
+
+/* Fixed desktop rail; the workspace remains in the second grid track. */
+@media (min-width: 961px) {
+  .nav-rail.desktop-only { position: fixed; inset: 0 auto 0 0; width: 248px; height: 100dvh; }
+  .rail-collapsed .nav-rail.desktop-only { width: 68px; }
+  .workspace-col { grid-column: 2; }
+}
+/* Graphite surfaces and focused blue accents inspired by developer tooling. */
+.top-header { background: var(--bg-surface); }
+.panel, .metric-tile { box-shadow: none; }
+.rail-nav-btn[aria-current='page'] { box-shadow: inset 2px 0 var(--rail-accent); }
+.btn-primary { box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.skeleton-panel { padding: 20px; }
+.skeleton-list { display: grid; gap: 16px; }
+.skeleton-row { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--border-subtle); }
+.skeleton-row:last-child { border-bottom: 0; }
+.skeleton-lines { flex: 1; display: grid; gap: 9px; }
+.skeleton-block { display: block; height: 12px; border-radius: 4px; background: var(--bg-sunken); animation: skeleton-pulse 1.5s ease-in-out infinite; }
+.skeleton-title { width: 35%; height: 18px; margin-bottom: 22px; }
+.skeleton-line { width: 48%; }
+.skeleton-line.short { width: 28%; }
+.skeleton-square { width: 32px; height: 32px; flex: 0 0 32px; }
+@keyframes skeleton-pulse { 50% { opacity: .55; } }
+
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.connection-error { max-width: 860px; margin-bottom: 16px; justify-content: space-between; flex-wrap: wrap; }
+
+/* A lightweight, replayable introduction; no animation is required to use it. */
+.onboarding { max-width: 860px; margin-bottom: 20px; padding: 18px 20px; border: 1px solid var(--accent-border); border-radius: var(--radius-md); background: var(--bg-surface); box-shadow: var(--shadow-sm); animation: guide-enter 260ms ease-out both; }
+.onboarding-top, .onboarding-bottom { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.onboarding-kicker, .onboarding-eyebrow { color: var(--text-secondary); font: 600 10px var(--font-mono); letter-spacing: .09em; }
+.onboarding-kicker span { color: var(--accent-primary); padding: 0 5px; }
+.onboarding-close { border: 0; background: transparent; color: var(--text-secondary); min-width: 36px; min-height: 36px; border-radius: var(--radius-sm); display: grid; place-items: center; cursor: pointer; }
+.onboarding-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+.onboarding-content { display: flex; gap: 16px; align-items: flex-start; padding: 10px 0 22px; animation: guide-enter 220ms ease-out both; }
+.onboarding-icon { display: grid; place-items: center; flex: 0 0 42px; width: 42px; height: 42px; color: var(--accent-primary); background: var(--accent-subtle); border: 1px solid var(--accent-border); border-radius: 10px; }
+.onboarding h2 { font-size: 19px; letter-spacing: -.03em; line-height: 1.25; margin: 5px 0 6px; }
+.onboarding p { max-width: 62ch; color: var(--text-secondary); margin: 0; font-size: 13px; line-height: 1.6; }
+.onboarding-bottom { border-top: 1px solid var(--border-subtle); padding-top: 14px; flex-wrap: wrap; }
+.onboarding-progress { display: flex; gap: 5px; }
+.onboarding-progress span { width: 20px; height: 3px; background: var(--border-subtle); border-radius: 3px; }
+.onboarding-progress span.active { background: var(--accent-primary); }
+.onboarding-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.guide-reopen { display: flex; justify-content: flex-end; margin: -8px 0 12px; }
+@keyframes guide-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: no-preference) {
+  .metric-tile, .panel, .btn, .rail-nav-btn { transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease; }
+  .metric-tile:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+  .btn:hover:not(:disabled) { box-shadow: var(--shadow-sm); }
+  .mobile-rail-drawer, .drawer-panel { animation: drawer-enter 220ms ease-out both; }
+}
+@keyframes drawer-enter { from { opacity: .8; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
+.drawer-panel { animation-name: drawer-enter-right; }
+@keyframes drawer-enter-right { from { opacity: .8; transform: translateX(12px); } to { opacity: 1; transform: translateX(0); } }
+@media (max-width: 600px) { .onboarding { padding: 14px; } .onboarding-content { gap: 12px; } .onboarding-bottom { align-items: flex-start; } .onboarding-actions { width: 100%; } }
