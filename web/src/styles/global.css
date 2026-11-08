@@ -963,3 +963,57 @@ kbd {
   overflow-y: auto;
   box-shadow: var(--shadow-lg);
 }
+
+/* Responsive workspace: keep scrolling local to data-dense components. */
+.main-content, .main-content > *, .panel, .panel-body, .page-title-group,
+.top-header-left, .top-header-actions, .field, [role='tabpanel'] { min-width: 0; }
+.page-title-group h1, .mono, .field-hint, .alert-box, .panel-body { overflow-wrap: anywhere; }
+.filter-bar .select { width: auto; flex: 1 1 145px; min-width: 0; }
+.batch-repo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 8px; }
+.table-scroll { max-width: 100%; overscroll-behavior-x: contain; }
+.ledger-table { min-width: 720px; }
+.scroll-hint, .tabs-scroll-hint { display: none; }
+.input, .select, .textarea { min-width: 0; max-width: 100%; }
+.tabs-strip { max-width: 100%; overscroll-behavior-x: contain; }
+.tabs-strip .tab-btn { flex: 0 0 auto; }
+.modal-dialog .panel-body { min-height: 0; }
+
+@media (max-width: 960px) {
+  .top-header { position: static; flex-wrap: wrap; align-items: flex-start; }
+  .top-header-left { flex: 1 1 100%; }
+  .top-header-actions { width: 100%; gap: 8px; }
+  .demo-banner { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+  .main-content { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+  .scroll-hint { display: block; margin: 0; padding: 8px 12px; background: var(--bg-sunken); border: 1px solid var(--border-subtle); border-bottom: 0; color: var(--text-secondary); font-size: 12px; }
+  .tabs-scroll-hint { display: block; margin: 0 0 -12px; color: var(--text-secondary); font-size: 12px; }
+  .mobile-rail-drawer { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+}
+
+@media (max-width: 600px) {
+  .top-header-actions > * { max-width: 100%; }
+  .page-title-group h1 { font-size: 16px; }
+  .summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .metric-tile { padding: 10px 12px; }
+  .filter-bar { gap: 8px; padding: 12px; }
+  .search-box { flex-basis: 100%; min-width: 0; }
+  .filter-bar .select { flex: 1 1 100%; width: 100%; }
+  .panel-header, .panel-body { padding: 14px; }
+  .modal-backdrop { padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+  .modal-dialog { max-height: calc(100dvh - 24px); }
+  .modal-dialog > div:last-child { flex-wrap: wrap; }
+  .btn { white-space: normal; text-align: center; }
+  .batch-bar .btn { max-width: 100%; }
+}
+
+/* Sidebar layout at compact desktop widths and in the mobile drawer. */
+.nav-rail { overflow-y: auto; overscroll-behavior: contain; }
+.rail-collapsed .nav-rail .rail-brand { flex-direction: column; justify-content: center; padding: 14px 8px; gap: 10px; }
+.rail-collapsed .nav-rail .rail-nav-list { padding: 6px 8px; }
+.rail-collapsed .nav-rail .rail-nav-btn { justify-content: center; min-height: 44px; padding: 8px; }
+.mobile-rail-backdrop { overscroll-behavior: contain; }
+.mobile-rail-drawer { width: min(320px, calc(100vw - 32px)); padding-left: env(safe-area-inset-left); overscroll-behavior: contain; }
+.mobile-rail-drawer .rail-collapse-btn { width: 44px; height: 44px; }
+.mobile-rail-drawer .rail-nav-btn { min-height: 48px; }
+@media (prefers-reduced-motion: reduce) {
+  .nav-rail, .rail-nav-btn { transition: none; }
+}

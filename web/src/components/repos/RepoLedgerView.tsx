@@ -247,7 +247,6 @@ export const RepoLedgerView: React.FC = () => {
 
         <select
           className="select"
-          style={{ width: 'auto', minWidth: 145 }}
           aria-label="Filter by owner"
           value={ownerFilter}
           onChange={(e) => setOwnerFilter(e.target.value)}
@@ -262,7 +261,6 @@ export const RepoLedgerView: React.FC = () => {
 
         <select
           className="select"
-          style={{ width: 'auto', minWidth: 145 }}
           aria-label="Filter by primary language"
           value={langFilter}
           onChange={(e) => setLangFilter(e.target.value)}
@@ -277,7 +275,6 @@ export const RepoLedgerView: React.FC = () => {
 
         <select
           className="select"
-          style={{ width: 'auto', minWidth: 168 }}
           aria-label="Sort repositories"
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as SortMode)}
@@ -318,6 +315,7 @@ export const RepoLedgerView: React.FC = () => {
       )}
 
       {/* Repository Table */}
+      <p className="scroll-hint">Scroll horizontally to see all repository details and actions →</p>
       <div className="table-scroll" tabIndex={0} role="region" aria-label="Repositories table">
         {reposLoading && repos.length === 0 ? (
           <div className="empty-state">

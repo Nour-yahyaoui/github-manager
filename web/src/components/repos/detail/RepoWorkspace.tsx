@@ -197,6 +197,7 @@ export const RepoWorkspace: React.FC<{ owner: string; repoName: string }> = ({
       </div>
 
       {/* Accessible WAI-ARIA Tab Strip */}
+      <p className="tabs-scroll-hint">Swipe or use arrow keys to explore all sections →</p>
       <div className="tabs-strip" role="tablist" aria-label="Repository configuration sections">
         {TABS.map((t, idx) => {
           const selected = activeTab === t.id;
