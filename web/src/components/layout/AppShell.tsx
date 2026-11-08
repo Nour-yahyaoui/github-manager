@@ -18,6 +18,7 @@ import {
 import { type NavSection, useApp } from '../../context/AppContext';
 import { type ThemePreference, useTheme } from '../../context/ThemeContext';
 import { RateLimitMeter } from './RateLimitMeter';
+import { GettingStarted } from '../onboarding/GettingStarted';
 
 const BrandMark: React.FC = () => (
   <svg
@@ -59,6 +60,7 @@ export const AppShell: React.FC<AppShellProps> = ({
     isDemo,
     exitDemoWorkspace,
     auth,
+    authLoading,
     repos,
     reposLoading,
     selectedFullNames,
@@ -390,6 +392,7 @@ export const AppShell: React.FC<AppShellProps> = ({
         </header>
 
         <main id="main-content" className="main-content" tabIndex={-1}>
+          {!authLoading && <GettingStarted />}
           {children}
         </main>
       </div>
