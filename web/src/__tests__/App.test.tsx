@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
@@ -34,6 +34,46 @@ describe('GitHub Manager Fullstack UI Workflows & Accessibility', () => {
       }
       return new Response(JSON.stringify({ error: { message: 'Not mocked' } }), { status: 404 });
     });
+  });
+
+  it('opens mobile navigation, traps focus, and restores focus on escape', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375, writable: true });
+    render(<App />);
+    const open = await screen.findByRole('button', { name: 'Open navigation menu' });
+    await user.click(open);
+    const dialog = screen.getByRole('dialog', { name: 'Navigation menu' });
+    const close = within(dialog).getByRole('button', { name: 'Close navigation menu' });
+    expect(close).toHaveFocus();
+    await user.keyboard('{Shift>}{Tab}{/Shift}');
+    expect(within(dialog).getByRole('button', { name: /Token & Connection/i })).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Navigation menu' })).not.toBeInTheDocument();
+    expect(open).toHaveFocus();
+    expect(document.body.style.overflow).toBe('');
+    window.innerWidth = 1024;
+  });
+
+  it('keeps compact sidebar destinations accessible and expands again', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Collapse navigation rail' }));
+    expect(screen.getByRole('button', { name: 'Repositories' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Expand navigation rail' }));
+    expect(screen.getByRole('button', { name: 'Collapse navigation rail' })).toBeInTheDocument();
+  });
+
+  it('closes the mobile drawer when resized to desktop', async () => {
+    const user = userEvent.setup();
+    window.innerWidth = 375;
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Open navigation menu' }));
+    expect(screen.getByRole('dialog', { name: 'Navigation menu' })).toBeInTheDocument();
+    act(() => {
+      window.innerWidth = 1024;
+      window.dispatchEvent(new Event('resize'));
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Navigation menu' })).not.toBeInTheDocument());
   });
 
   it('shows honest unconfigured PAT state on initial boot and labels Sample Workspace clearly', async () => {

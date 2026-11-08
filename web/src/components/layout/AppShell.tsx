@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   BookMarked,
   FlaskConical,
@@ -72,6 +72,39 @@ export const AppShell: React.FC<AppShellProps> = ({
 
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const mobileDrawerRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const drawer = mobileDrawerRef.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    drawer?.querySelector<HTMLButtonElement>('button')?.focus();
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || !drawer) return;
+      const buttons = Array.from(drawer.querySelectorAll<HTMLButtonElement>('button:not([disabled])'));
+      const first = buttons[0];
+      const last = buttons[buttons.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener('keydown', trapFocus);
+    return () => {
+      document.removeEventListener('keydown', trapFocus);
+      document.body.style.overflow = previousOverflow;
+      if (window.innerWidth <= 960) menuButtonRef.current?.focus();
+    };
+  }, [mobileOpen]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onResize = () => {
+      if (window.innerWidth > 960) setMobileOpen(false);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [mobileOpen]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -79,6 +112,7 @@ export const AppShell: React.FC<AppShellProps> = ({
         setMobileOpen(false);
         return;
       }
+      if (mobileOpen) return;
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (
         tag === 'INPUT' ||
@@ -209,6 +243,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                   type="button"
                   className="rail-nav-btn"
                   aria-current={isActive ? 'page' : undefined}
+                  aria-label={isCompact ? item.label : undefined}
                   title={isCompact ? item.label : undefined}
                   onClick={() => handleSelectNav(item.id)}
                 >
@@ -269,7 +304,9 @@ export const AppShell: React.FC<AppShellProps> = ({
           }}
         >
           <div
+            id="mobile-navigation"
             className="mobile-rail-drawer"
+            ref={mobileDrawerRef}
             role="dialog"
             aria-modal="true"
             aria-label="Navigation menu"
@@ -304,6 +341,9 @@ export const AppShell: React.FC<AppShellProps> = ({
             <button
               type="button"
               className="mobile-menu-btn"
+              ref={menuButtonRef}
+              aria-expanded={mobileOpen}
+              aria-controls={mobileOpen ? 'mobile-navigation' : undefined}
               aria-label="Open navigation menu"
               onClick={() => setMobileOpen(true)}
             >
