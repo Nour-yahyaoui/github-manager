@@ -1,0 +1,23 @@
+# Rust / Cargo
+/target
+Cargo.lock
+
+# Environment variables & secrets (never commit PATs)
+.env
+.env.local
+.env.*.local
+
+# Frontend dependencies & build artifacts
+/web/node_modules
+/web/dist
+/web/.vite
+/web/coverage
+*.tsbuildinfo
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
