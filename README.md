@@ -1,6 +1,12 @@
-# GitHub Manager — Local Actix Web Repository Control Plane
+# GitHub Manager
 
-A local-first fullstack application powered by **Actix Web 4 (Rust)** and **React + TypeScript (Vite)** for managing your GitHub repositories with a Personal Access Token (PAT).
+**A local control plane for the work behind your GitHub repositories.** Search, edit, and manage repositories without bouncing between settings pages.
+
+Built with Actix Web 4 (Rust) and React + TypeScript. Start at the landing page (`/`), then open the workspace (`/app`) to connect a GitHub Personal Access Token (PAT) or explore labeled sample data.
+
+[Get started](#quick-start-local) · [Capabilities](#capabilities) · [Token permissions](#recommended-github-pat-scopes) · [API reference](#actix-web-rest-api-apiv1) · [Security](#security-and-operational-notes)
+
+> This is a local development tool, not a hosted multi-user service. Keep the server on a trusted machine and network; repository operations can modify or delete real GitHub data.
 
 ---
 
@@ -37,7 +43,7 @@ A local-first fullstack application powered by **Actix Web 4 (Rust)** and **Reac
 chmod +x scripts/start-local.sh
 ./scripts/start-local.sh
 ```
-This creates `.env` (if absent), installs & builds the frontend into `./web/dist`, and launches the Actix Web server at **`http://127.0.0.1:8080`**.
+This creates `.env` (if absent), installs & builds the frontend into `./web/dist`, and launches the Actix Web server at **`http://127.0.0.1:8080`**. Open that address for the landing page, then choose **Open workspace**. No token is needed for the sample workspace.
 
 ### 2. Manual / Development Workflow
 ```bash
@@ -53,9 +59,41 @@ For frontend hot-module replacement alongside Actix Web:
 # Terminal 1 — Actix Web API on http://127.0.0.1:8080
 cargo run
 
-# Terminal 2 — Vite HMR dev server on http://localhost:5173 (proxies /api/v1 -> :8080)
+# Terminal 2 — Vite HMR dev server on http://localhost:5173 (forwards /api/v1 to :8080 when available)
 cd web && npm run dev
 ```
+
+The Vite development server includes a server-side bridge: it forwards API requests to Actix when available and can handle them itself when Actix is unavailable. Its runtime token and audit log are separate from Actix. Vite binds to all interfaces by default in this project; use it only on a trusted network.
+
+### Configuration
+
+Copy `.env.example` to `.env` for the Actix server. `GITHUB_PAT` (or `GH_PAT`) is optional; `HOST` and `PORT` default to `127.0.0.1` and `8080`, `STATIC_DIR` defaults to `./web/dist`, and `GITHUB_API_BASE` defaults to GitHub's public API. `RUST_LOG` controls logging. The Vite bridge also accepts `ACTIX_URL` as its upstream address. See `.env.example` for details.
+
+### Checks
+
+```bash
+cd web
+npm ci
+npm run typecheck
+npm test
+npm run build
+# From the repository root, with Rust installed:
+cargo test
+```
+
+## Security and operational notes
+
+- The runtime token is held in server process memory; a token set in `.env` is stored on disk. Do not commit or share `.env`. Clearing a runtime token does not remove a configured environment token.
+- The API is intended for local use and does not provide multi-user authentication. Do not expose it or the Vite development server to untrusted networks. The server's CORS policy is not an authentication boundary.
+- Use the minimum token permissions and repository access required for your task. GitHub organization policies and token type may further restrict operations. Revoke a compromised token on GitHub.
+- Sample workspace data is in memory and is not a backup. The session audit log is operational history, not a durable security audit. Confirm destructive operations carefully.
+
+### Troubleshooting
+
+- **The server shows an API-only page:** run `cd web && npm ci && npm run build`, then reload.
+- **Authentication or permissions fail:** check the token, expiration, repository selection, organization authorization, and permissions in GitHub; reconnect it in the workspace.
+- **Port already in use:** change `PORT` in `.env`; if using Vite alongside Actix, set `ACTIX_URL` to the matching server URL when starting Vite.
+- **Rate limited:** inspect the quota in the workspace and wait for the reset or use a token with an appropriate quota.
 
 ---
 
