@@ -298,7 +298,7 @@ export const BatchOperationsView: React.FC = () => {
           {repos.length === 0 ? (
             <p className="field-hint">No repositories loaded.</p>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8 }}>
+            <div className="batch-repo-grid">
               {repos.map((r) => {
                 const checked = selectedFullNames.includes(r.full_name);
                 return (

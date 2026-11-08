@@ -8,11 +8,12 @@ import { CreateRepoView } from './components/repos/CreateRepoView';
 import { RepoWorkspace } from './components/repos/detail/RepoWorkspace';
 import { RepoLedgerView } from './components/repos/RepoLedgerView';
 import { ToastRegion } from './components/ui/ToastRegion';
+import { Skeleton } from './components/ui/Skeleton';
 import { AppProvider, useApp } from './context/AppContext';
 import { ThemeProvider } from './context/ThemeContext';
 
 const WorkspaceRouter: React.FC = () => {
-  const { auth, authLoading, section, activeRepoSlug, navigateTo } = useApp();
+  const { auth, authLoading, authError, refreshAll, section, activeRepoSlug, navigateTo } = useApp();
 
   if (authLoading) {
     return (
@@ -21,7 +22,7 @@ const WorkspaceRouter: React.FC = () => {
         pageSubtitle="Checking GitHub Personal Access Token session"
       >
         <div className="panel">
-          <div className="panel-body">Verifying local server status…</div>
+          <Skeleton label="Verifying local server status" />
         </div>
       </AppShell>
     );
@@ -34,6 +35,12 @@ const WorkspaceRouter: React.FC = () => {
         pageTitle="Connect GitHub Personal Access Token"
         pageSubtitle="Authenticate with your local Actix Web server or explore the labeled Sample Workspace"
       >
+        {authError && (
+          <div className="alert-box alert-error connection-error" role="alert">
+            <div><strong>Could not reach the server.</strong><div>{authError}</div></div>
+            <button type="button" className="btn btn-sm" onClick={() => void refreshAll()}>Retry connection</button>
+          </div>
+        )}
         <TokenVaultPanel />
         <ToastRegion />
       </AppShell>

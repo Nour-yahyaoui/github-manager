@@ -141,7 +141,7 @@ export const BranchesTab: React.FC<Props> = ({ repo, branches, onRefreshBranches
             <p>Empty repository — commit a README in the Files tab to initialize the default branch.</p>
           </div>
         ) : (
-          <div className="table-scroll" style={{ border: 'none', borderRadius: 0 }}>
+          <div className="table-scroll" tabIndex={0} role="region" aria-label="Branches table (scroll horizontally for more columns)" style={{ border: 'none', borderRadius: 0 }}>
             <table className="ledger-table">
               <thead>
                 <tr>

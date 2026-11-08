@@ -1,10 +1,11 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
 
 describe('GitHub Manager Fullstack UI Workflows & Accessibility', () => {
   beforeEach(() => {
+    localStorage.removeItem('ghm-onboarding-complete-v1');
     vi.restoreAllMocks();
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
@@ -34,6 +35,46 @@ describe('GitHub Manager Fullstack UI Workflows & Accessibility', () => {
       }
       return new Response(JSON.stringify({ error: { message: 'Not mocked' } }), { status: 404 });
     });
+  });
+
+  it('opens mobile navigation, traps focus, and restores focus on escape', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375, writable: true });
+    render(<App />);
+    const open = await screen.findByRole('button', { name: 'Open navigation menu' });
+    await user.click(open);
+    const dialog = screen.getByRole('dialog', { name: 'Navigation menu' });
+    const close = within(dialog).getByRole('button', { name: 'Close navigation menu' });
+    expect(close).toHaveFocus();
+    await user.keyboard('{Shift>}{Tab}{/Shift}');
+    expect(within(dialog).getByRole('button', { name: /Token & Connection/i })).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Navigation menu' })).not.toBeInTheDocument();
+    expect(open).toHaveFocus();
+    expect(document.body.style.overflow).toBe('');
+    window.innerWidth = 1024;
+  });
+
+  it('keeps compact sidebar destinations accessible and expands again', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Collapse navigation rail' }));
+    expect(screen.getByRole('button', { name: 'Repositories' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Expand navigation rail' }));
+    expect(screen.getByRole('button', { name: 'Collapse navigation rail' })).toBeInTheDocument();
+  });
+
+  it('closes the mobile drawer when resized to desktop', async () => {
+    const user = userEvent.setup();
+    window.innerWidth = 375;
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Open navigation menu' }));
+    expect(screen.getByRole('dialog', { name: 'Navigation menu' })).toBeInTheDocument();
+    act(() => {
+      window.innerWidth = 1024;
+      window.dispatchEvent(new Event('resize'));
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Navigation menu' })).not.toBeInTheDocument());
   });
 
   it('shows honest unconfigured PAT state on initial boot and labels Sample Workspace clearly', async () => {
@@ -145,4 +186,56 @@ describe('GitHub Manager Fullstack UI Workflows & Accessibility', () => {
     expect(featuresTab).toHaveAttribute('aria-selected', 'true');
     expect(featuresTab).toHaveFocus();
   });
+  it('shows a connection error and retries authentication', async () => {
+    const user = userEvent.setup();
+    let attempts = 0;
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      if (String(input).includes('/auth/status')) {
+        attempts++;
+        if (attempts === 1) throw new Error('Server offline');
+        return new Response(JSON.stringify({ authenticated: false, token_source: 'none', scopes: [], api_base: 'https://api.github.com' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    render(<App />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Server offline');
+    await user.click(screen.getByRole('button', { name: 'Retry connection' }));
+    await waitFor(() => expect(screen.queryByText('Server offline')).not.toBeInTheDocument());
+    expect(attempts).toBe(2);
+  });
+
+  it('announces a skeleton while the initial connection is pending', () => {
+    vi.mocked(fetch).mockImplementation(() => new Promise(() => {}));
+    render(<App />);
+    expect(screen.getByRole('status', { name: 'Verifying local server status' })).toBeInTheDocument();
+  });
+
+  it('walks through the guide, enters sample data, and can replay it', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const guide = await screen.findByRole('region', { name: 'Getting started guide' });
+    expect(within(guide).getByText('A clearer view of your GitHub work.')).toBeInTheDocument();
+    await user.click(within(guide).getByRole('button', { name: 'Next' }));
+    expect(within(guide).getByText('Start on your terms.')).toBeInTheDocument();
+    await user.click(within(guide).getByRole('button', { name: 'Next' }));
+    await user.click(within(guide).getByRole('button', { name: 'Explore sample data' }));
+    expect(await screen.findByText(/SAMPLE WORKSPACE · DEMO DATA/i)).toBeInTheDocument();
+    expect(localStorage.getItem('ghm-onboarding-complete-v1')).toBe('yes');
+    await user.click(await screen.findByRole('button', { name: 'Getting started' }));
+    expect(screen.getByText('A clearer view of your GitHub work.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Dismiss getting started guide' }));
+    expect(screen.queryByRole('region', { name: 'Getting started guide' })).not.toBeInTheDocument();
+  });
+
+  it('takes the token path without starting a demo', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const guide = await screen.findByRole('region', { name: 'Getting started guide' });
+    await user.click(within(guide).getByRole('button', { name: 'Next' }));
+    await user.click(within(guide).getByRole('button', { name: 'Next' }));
+    await user.click(within(guide).getByRole('button', { name: 'Connect a token' }));
+    expect(screen.getByLabelText('Personal Access Token')).toHaveFocus();
+    expect(screen.queryByText(/SAMPLE WORKSPACE · DEMO DATA/i)).not.toBeInTheDocument();
+  });
+
 });

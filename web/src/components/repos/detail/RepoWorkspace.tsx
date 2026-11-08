@@ -14,6 +14,7 @@ import {
 import type { BranchSummary, Repository } from '../../../api/types';
 import { useApp } from '../../../context/AppContext';
 import { RepoStateBadges } from '../../ui/Badge';
+import { Skeleton } from '../../ui/Skeleton';
 import { AccessHooksTab } from './AccessHooksTab';
 import { BranchesTab } from './BranchesTab';
 import { DangerZoneTab } from './DangerZoneTab';
@@ -58,6 +59,7 @@ export const RepoWorkspace: React.FC<{ owner: string; repoName: string }> = ({
   const [branches, setBranches] = useState<BranchSummary[]>([]);
   const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const [activeTab, setActiveTab] = useState<TabKey>('general');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -95,7 +97,7 @@ export const RepoWorkspace: React.FC<{ owner: string; repoName: string }> = ({
     return () => {
       active = false;
     };
-  }, [api, owner, repoName, upsertRepoInList]);
+  }, [api, owner, repoName, upsertRepoInList, retryCount]);
 
   const handleUpdated = (updated: Repository, prevFullName?: string) => {
     setRepo(updated);
@@ -116,7 +118,7 @@ export const RepoWorkspace: React.FC<{ owner: string; repoName: string }> = ({
   if (loading && !repo) {
     return (
       <div className="panel">
-        <div className="panel-body">Loading repository control workspace…</div>
+        <Skeleton label="Loading repository workspace" />
       </div>
     );
   }
@@ -125,7 +127,8 @@ export const RepoWorkspace: React.FC<{ owner: string; repoName: string }> = ({
     return (
       <div className="panel">
         <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div className="alert-box alert-error">{error}</div>
+          <div className="alert-box alert-error" role="alert">{error}</div>
+          <div><button type="button" className="btn btn-primary" onClick={() => setRetryCount((count) => count + 1)}>Retry loading repository</button></div>
           <div>
             <button type="button" className="btn" onClick={() => navigateTo('ledger')}>
               <ArrowLeft size={14} aria-hidden="true" />
@@ -141,6 +144,7 @@ export const RepoWorkspace: React.FC<{ owner: string; repoName: string }> = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 1080 }}>
+      {error && <div className="alert-box alert-error" role="alert"><span>Could not refresh repository: {error}</span><button type="button" className="btn btn-sm" onClick={() => setRetryCount((count) => count + 1)}>Retry</button></div>}
       {/* Top Repository Summary Bar */}
       <div
         className="panel"
@@ -197,6 +201,7 @@ export const RepoWorkspace: React.FC<{ owner: string; repoName: string }> = ({
       </div>
 
       {/* Accessible WAI-ARIA Tab Strip */}
+      <p className="tabs-scroll-hint">Swipe or use arrow keys to explore all sections →</p>
       <div className="tabs-strip" role="tablist" aria-label="Repository configuration sections">
         {TABS.map((t, idx) => {
           const selected = activeTab === t.id;

@@ -40,7 +40,7 @@ export const AuditLogView: React.FC = () => {
           </p>
         </div>
       ) : (
-        <div className="table-scroll" style={{ border: 'none', borderRadius: 0 }}>
+        <div className="table-scroll" tabIndex={0} role="region" aria-label="Audit log table (scroll horizontally for more columns)" style={{ border: 'none', borderRadius: 0 }}>
           <table className="ledger-table">
             <thead>
               <tr>
