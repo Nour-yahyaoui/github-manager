@@ -6,6 +6,77 @@ use reqwest::{Method, Response};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{json, Value};
+use std::time::Duration;
+
+/// Reqwest's `Display` implementation only says "error sending request for url (...)",
+/// which hides whether the real problem was DNS, TCP, a proxy or TLS. Walk the whole
+/// `std::error::Error::source` chain so the operator can actually see the root cause.
+pub fn describe_transport_error(err: &reqwest::Error) -> (String, Option<String>) {
+    let mut chain: Vec<String> = Vec::new();
+
+    let head = err.to_string();
+    if !head.is_empty() {
+        chain.push(head);
+    }
+
+    let mut source = std::error::Error::source(err);
+    while let Some(cause) = source {
+        let text = cause.to_string();
+        if !text.is_empty() && !chain.iter().any(|existing| existing == &text) {
+            chain.push(text);
+        }
+        source = cause.source();
+    }
+
+    let joined = chain.join(" -> ");
+    let hint = transport_hint(&joined);
+    (joined, hint)
+}
+
+fn transport_hint(chain: &str) -> Option<String> {
+    let lower = chain.to_ascii_lowercase();
+
+    let hint = if lower.contains("dns")
+        || lower.contains("failed to lookup address")
+        || lower.contains("name or service not known")
+        || lower.contains("no such host")
+        || lower.contains("11001")
+    {
+        "DNS lookup for the GitHub API host failed. Check your DNS servers, \
+         VPN/hosts file, or a proxy that cannot resolve api.github.com. \
+         Try `ping api.github.com` next to `curl https://api.github.com/zen`."
+    } else if lower.contains("certificate")
+        || lower.contains("unknownissuer")
+        || lower.contains("certnotvalid")
+        || lower.contains("invalid peer certificate")
+        || lower.contains("handshake")
+    {
+        "TLS handshake failed, which usually means antivirus, a corporate firewall or a \
+         VPN is intercepting HTTPS with a certificate the client does not trust. \
+         Install its root CA in the OS trust store (this build reads system roots), or \
+         set GITHUB_PROXY to the proxy that owns the interception."
+    } else if lower.contains("proxy") {
+        "A proxy was used for this request and it rejected or dropped the connection. \
+         Check the proxy URL/credentials, or set DISABLE_SYSTEM_PROXY=true to bypass the \
+         Windows/macOS system proxy and connect directly."
+    } else if lower.contains("10013") || lower.contains("access is denied") {
+        "Windows blocked the socket (WSAEACCES). A firewall or antivirus is preventing \
+         the server binary from making outbound connections to port 443. Allow \
+         github-manager.exe (target/debug/github-manager.exe) in your firewall."
+    } else if lower.contains("timed out") || lower.contains("10060") || lower.contains("os error 10060")
+    {
+        "The connection attempt timed out. A firewall, VPN or proxy is silently dropping \
+         traffic to api.github.com:443. Try `curl https://api.github.com/zen`, then set \
+         GITHUB_PROXY if a proxy is required."
+    } else if lower.contains("refused") || lower.contains("10061") {
+        "The connection was refused. Something local (proxy setting, VPN client, hosts \
+         file entry) is redirecting api.github.com to a port that is not listening."
+    } else {
+        return None;
+    };
+
+    Some(hint.to_string())
+}
 
 pub struct GitHubClient<'a> {
     state: &'a AppState,
@@ -165,30 +236,67 @@ impl<'a> GitHubClient<'a> {
         query: Option<&[(String, String)]>,
         body: Option<&B>,
     ) -> Result<(Response, Option<RateLimitSnapshot>), ApiError> {
-        let mut req = self
-            .state
-            .http
-            .request(method, self.url(path))
-            .header("Authorization", format!("Bearer {}", self.token))
-            .header("Accept", "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", "2022-11-28");
+        let url = self.url(path);
+        // Idempotent reads get one retry: TLS resets and flaky proxies are common, and
+        // repeating a GET is always safe.
+        let retryable = method == Method::GET || method == Method::HEAD;
+        let mut attempt: u32 = 0;
 
-        if let Some(q) = query {
-            if !q.is_empty() {
-                req = req.query(q);
+        let resp = loop {
+            attempt += 1;
+
+            let mut req = self
+                .state
+                .http
+                .request(method.clone(), url.clone())
+                .header("Authorization", format!("Bearer {}", self.token))
+                .header("Accept", "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", "2022-11-28");
+
+            if let Some(q) = query {
+                if !q.is_empty() {
+                    req = req.query(q);
+                }
             }
-        }
 
-        if let Some(b) = body {
-            req = req.json(b);
-        }
-
-        let resp = req.send().await.map_err(|e| {
-            ApiError::Upstream {
-                status: 502,
-                message: format!("Failed to reach GitHub API: {}", e),
+            if let Some(b) = body {
+                req = req.json(b);
             }
-        })?;
+
+            match req.send().await {
+                Ok(resp) => break resp,
+                Err(e) => {
+                    let (chain, hint) = describe_transport_error(&e);
+
+                    if retryable && attempt < 2 {
+                        log::warn!(
+                            "Transport error talking to {} (attempt {}): {} - retrying once",
+                            url,
+                            attempt,
+                            chain
+                        );
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        continue;
+                    }
+
+                    log::error!("Cannot reach GitHub API at {}: {}", url, chain);
+                    if let Some(hint) = hint.as_deref() {
+                        log::error!("Likely cause / fix: {}", hint);
+                    }
+
+                    let mut message = format!("Failed to reach GitHub API at {}: {}", url, chain);
+                    if let Some(hint) = hint {
+                        message.push_str(" | Fix: ");
+                        message.push_str(&hint);
+                    }
+
+                    return Err(ApiError::Upstream {
+                        status: 502,
+                        message,
+                    });
+                }
+            }
+        };
 
         let rate = self.capture_headers(&resp).await;
         if !resp.status().is_success() {
@@ -197,6 +305,7 @@ impl<'a> GitHubClient<'a> {
 
         Ok((resp, rate))
     }
+
 
     pub async fn request_json<T: DeserializeOwned, B: Serialize + ?Sized>(
         &self,

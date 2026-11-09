@@ -105,6 +105,15 @@ GitHub Manager supports the operations listed above, not every GitHub feature. A
 - **Authentication or permissions fail:** check the token, expiration, repository selection, organization authorization, and permissions in GitHub; reconnect it in the workspace.
 - **Port already in use:** change `PORT` in `.env`; if using Vite alongside Actix, set `ACTIX_URL` to the matching server URL when starting Vite.
 - **Rate limited:** inspect the quota in the workspace and wait for the reset or use a token with an appropriate quota.
+- **`Failed to reach GitHub API: error sending request for url (...)`:** the server process could not open an HTTPS connection to GitHub. This is a network problem on the machine running the backend, not a token problem. The error now includes the full cause chain (DNS, TCP, TLS, proxy) and a hint. Diagnose it with:
+  ```bash
+  # Same process, same client as every GitHub call
+  curl http://127.0.0.1:8080/api/v1/diagnostics/connectivity
+  ```
+  or **Token & Connection → Connection Diagnostics → Run connection check** in the UI. The report shows DNS answers, a raw TCP probe of port 443, the exact HTTPS failure and the active proxy mode. The startup log also prints the reason once when `GITHUB_PAT` is set in `.env`.
+  - **Windows + `curl` works but the app does not:** reqwest honours the Windows system proxy (Internet Options / VPN clients) while `curl.exe` does not. Check `reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings"` for `ProxyEnable`. Then either set `GITHUB_PROXY=http://host:port`, or set `DISABLE_SYSTEM_PROXY=true` in `.env` to connect directly.
+  - **Antivirus / corporate TLS inspection:** the client trusts both the bundled Mozilla roots and the OS certificate store. If a proxy re-signs GitHub traffic, install its root CA in the OS trust store (or set `GITHUB_PROXY` to that proxy).
+  - **Firewall prompt never appeared:** allow `target/debug/github-manager.exe` outbound on port 443 in Windows Defender Firewall and any third-party firewall.
 
 ---
 
@@ -129,6 +138,7 @@ GitHub Manager supports the operations listed above, not every GitHub feature. A
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/api/v1/health` | Server health & latest rate-limit snapshot |
+| `GET` | `/api/v1/diagnostics/connectivity` | DNS, TCP:443, TLS/HTTPS and proxy report for reaching the GitHub API from the server process |
 | `GET` | `/api/v1/auth/status` | Validate active PAT, user profile, scopes & rate limit |
 | `POST` | `/api/v1/auth/token` | Verify & store PAT in local runtime session memory |
 | `DELETE` | `/api/v1/auth/token` | Clear runtime session PAT |
