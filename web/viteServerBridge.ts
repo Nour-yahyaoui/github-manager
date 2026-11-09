@@ -1,4 +1,8 @@
+import { lookup } from 'node:dns/promises';
+import fs from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import https from 'node:https';
+import net from 'node:net';
 import type { Plugin } from 'vite';
 
 interface AuditEntry {
@@ -53,6 +57,134 @@ function sendApiError(
       status,
       ...(reset_epoch !== undefined ? { reset_epoch } : {}),
     },
+  });
+}
+
+
+/**
+ * Node's fetch only reports "fetch failed"; the real reason (ENOTFOUND, ECONNREFUSED,
+ * self-signed certificate, proxy failure...) lives in the `cause` chain. Flatten it.
+ */
+function describeNodeFetchError(err: any): string {
+  const parts: string[] = [];
+  const seen = new Set<string>();
+  let current: any = err;
+  let depth = 0;
+
+  while (current && depth < 6) {
+    const text = current.code ? `${current.code}: ${current.message}` : String(current.message || current);
+    if (text && !seen.has(text)) {
+      seen.add(text);
+      parts.push(text);
+    }
+    current = current.cause;
+    depth += 1;
+  }
+
+  return parts.join(' -> ') || 'unknown network error';
+}
+
+function tcpProbe(address: string, port: number): Promise<{ ok: boolean; error?: string }> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: address, port });
+    let settled = false;
+
+    const finish = (result: { ok: boolean; error?: string }) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(result);
+    };
+
+    socket.setTimeout(6000);
+    socket.once('connect', () => finish({ ok: true }));
+    socket.once('timeout', () => finish({ ok: false, error: 'timeout after 6000ms' }));
+    socket.once('error', (err: any) =>
+      finish({ ok: false, error: err?.code ? `${err.code}: ${err.message}` : String(err?.message || err) })
+    );
+  });
+}
+
+
+let cachedSystemCa: string[] | null | undefined;
+
+/**
+ * Node ships its own Mozilla root bundle and ignores the OS certificate store, so a
+ * machine behind antivirus/corporate TLS inspection sees "unable to verify the first
+ * certificate" even though curl works. Load the system bundle so the bridge behaves
+ * like the Rust server (which trusts the OS store).
+ */
+function systemCaCertificates(): string[] | null {
+  if (cachedSystemCa !== undefined) return cachedSystemCa;
+
+  const candidates = [
+    process.env.NODE_EXTRA_CA_CERTS,
+    process.env.SSL_CERT_FILE,
+    '/etc/ssl/certs/ca-certificates.crt',
+    '/etc/pki/tls/certs/ca-bundle.crt',
+    '/etc/ssl/cert.pem',
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      const content = fs.readFileSync(candidate, 'utf8');
+      if (content.includes('BEGIN CERTIFICATE')) {
+        cachedSystemCa = [content];
+        return cachedSystemCa;
+      }
+    } catch {
+      // Ignore unreadable paths and keep looking.
+    }
+  }
+
+  cachedSystemCa = null;
+  return cachedSystemCa;
+}
+
+interface SimpleHttpResponse {
+  status: number;
+  headers: Record<string, string>;
+  text: string;
+}
+
+function httpsRequestWithSystemCa(
+  url: string,
+  method: string,
+  headers: Record<string, string>,
+  body?: string
+): Promise<SimpleHttpResponse> {
+  const target = new URL(url);
+  const ca = systemCaCertificates();
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        protocol: target.protocol,
+        hostname: target.hostname,
+        port: target.port || (target.protocol === 'https:' ? 443 : 80),
+        path: `${target.pathname}${target.search}`,
+        method,
+        headers,
+        ...(ca ? { ca } : {}),
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => {
+          const flat: Record<string, string> = {};
+          for (const [key, value] of Object.entries(res.headers)) {
+            flat[key.toLowerCase()] = Array.isArray(value) ? value.join(', ') : String(value ?? '');
+          }
+          resolve({ status: res.statusCode || 0, headers: flat, text: Buffer.concat(chunks).toString('utf8') });
+        });
+      }
+    );
+
+    req.setTimeout(30000, () => req.destroy(new Error('timeout after 30000ms')));
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
   });
 }
 
@@ -139,23 +271,45 @@ export function createGitHubBridgePlugin(): Plugin {
       }
     }
 
-    const resp = await fetch(url.toString(), {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'User-Agent': 'github-manager-bridge/0.1.0',
-        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-      },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
+    const requestHeaders: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'github-manager-bridge/0.1.0',
+      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    };
+    const payload = body !== undefined ? JSON.stringify(body) : undefined;
 
-    const limit = Number(resp.headers.get('x-ratelimit-limit') || 0);
-    const remaining = Number(resp.headers.get('x-ratelimit-remaining') || 0);
-    const used = Number(resp.headers.get('x-ratelimit-used') || 0);
-    const reset_epoch = Number(resp.headers.get('x-ratelimit-reset') || 0);
-    const scopesRaw = resp.headers.get('x-oauth-scopes') || '';
+    let status = 0;
+    let responseHeaders: Record<string, string> = {};
+    let rawText = '';
+
+    try {
+      const resp = await fetch(url.toString(), { method, headers: requestHeaders, body: payload });
+      status = resp.status;
+      resp.headers.forEach((value, key) => {
+        responseHeaders[key.toLowerCase()] = value;
+      });
+      rawText = await resp.text();
+    } catch (err: any) {
+      const detail = describeNodeFetchError(err);
+      const certificateProblem = /CERT|certificate|verify|SELF_SIGNED|UNABLE_TO_VERIFY/i.test(detail);
+      if (!certificateProblem || !systemCaCertificates()) throw err;
+
+      // Node rejected a certificate the OS trusts (TLS inspection). Retry with the
+      // system bundle instead of failing every GitHub call in the workspace.
+      const retried = await httpsRequestWithSystemCa(url.toString(), method, requestHeaders, payload);
+      status = retried.status;
+      responseHeaders = retried.headers;
+      rawText = retried.text;
+    }
+
+    const ok = status >= 200 && status < 300;
+    const limit = Number(responseHeaders['x-ratelimit-limit'] || 0);
+    const remaining = Number(responseHeaders['x-ratelimit-remaining'] || 0);
+    const used = Number(responseHeaders['x-ratelimit-used'] || 0);
+    const reset_epoch = Number(responseHeaders['x-ratelimit-reset'] || 0);
+    const scopesRaw = responseHeaders['x-oauth-scopes'] || '';
     const scopes = scopesRaw
       .split(',')
       .map((s) => s.trim())
@@ -167,7 +321,6 @@ export function createGitHubBridgePlugin(): Plugin {
       latestRateLimit = rate;
     }
 
-    const rawText = await resp.text();
     let parsed: any = null;
     if (rawText) {
       try {
@@ -177,7 +330,7 @@ export function createGitHubBridgePlugin(): Plugin {
       }
     }
 
-    return { ok: resp.ok, status: resp.status, data: parsed, rate };
+    return { ok, status, data: parsed, rate };
   }
 
   function respondUpstreamError(
@@ -205,6 +358,134 @@ export function createGitHubBridgePlugin(): Plugin {
     return sendApiError(res, status, 'GITHUB_UPSTREAM_ERROR', fullMsg);
   }
 
+
+  async function probeConnectivity(res: ServerResponse): Promise<void> {
+    let parsed: URL;
+    try {
+      parsed = new URL(ghApiBase);
+    } catch (err: any) {
+      return sendJson(res, 200, {
+        ok: false,
+        verdict: 'invalid_api_base',
+        message: `GITHUB_API_BASE is not a valid URL: ${err?.message || err}`,
+        api_base: ghApiBase,
+        proxy: { mode: 'n/a', env_vars: [] },
+        dns: { ok: false, addresses: [] as string[], error: null },
+        tcp: [] as unknown[],
+        https: { ok: false, error: null },
+      });
+    }
+
+    const host = parsed.hostname;
+    const port = Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80));
+
+    let addresses: string[] = [];
+    let dnsError: string | null = null;
+    try {
+      const entries = await lookup(host, { all: true });
+      addresses = entries.map((entry) => entry.address);
+    } catch (err: any) {
+      dnsError = describeNodeFetchError(err);
+    }
+
+    const tcp: Array<Record<string, unknown>> = [];
+    if (!dnsError) {
+      for (const address of addresses) {
+        const started = Date.now();
+        const attempt = await tcpProbe(address, port);
+        tcp.push(
+          attempt.ok
+            ? { address: `${address}:${port}`, ok: true, ms: Date.now() - started }
+            : { address: `${address}:${port}`, ok: false, error: attempt.error }
+        );
+      }
+    }
+
+    const zenUrl = `${ghApiBase}/zen`;
+    const started = Date.now();
+    const probeHeaders = {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'github-manager-bridge/0.1.0',
+    };
+    let https: Record<string, unknown>;
+    try {
+      const resp = await fetch(zenUrl, { headers: probeHeaders });
+      https = { ok: resp.ok, status: resp.status, ms: Date.now() - started, url: zenUrl, via_system_ca: false };
+    } catch (err: any) {
+      const detail = describeNodeFetchError(err);
+      const certificateProblem = /CERT|certificate|verify|SELF_SIGNED|UNABLE_TO_VERIFY/i.test(detail);
+
+      if (certificateProblem && systemCaCertificates()) {
+        // Same retry the real GitHub calls use: Node's bundled roots rejected the
+        // certificate, but the OS store may trust it (antivirus/proxy inspection).
+        try {
+          const retried = await httpsRequestWithSystemCa(zenUrl, 'GET', probeHeaders);
+          https = {
+            ok: retried.status >= 200 && retried.status < 300,
+            status: retried.status,
+            ms: Date.now() - started,
+            url: zenUrl,
+            via_system_ca: true,
+          };
+        } catch (retryErr: any) {
+          https = {
+            ok: false,
+            url: zenUrl,
+            error: describeNodeFetchError(retryErr),
+            hint: 'TLS certificate is not trusted even with the OS certificate store - check the proxy/antivirus interception.',
+          };
+        }
+      } else {
+        let hint: string | null = null;
+        if (/ENOTFOUND|EAI_AGAIN/i.test(detail)) {
+          hint = 'DNS lookup failed. Check DNS servers, VPN or hosts file entries for api.github.com.';
+        } else if (certificateProblem) {
+          hint = 'TLS certificate could not be verified - antivirus, corporate proxy or VPN TLS interception.';
+        } else if (/ECONNREFUSED/i.test(detail)) {
+          hint = 'Connection refused - a local proxy or VPN is redirecting api.github.com.';
+        } else if (/ETIMEDOUT|timeout/i.test(detail)) {
+          hint = 'Connection timed out - a firewall or VPN is dropping outbound HTTPS.';
+        }
+        https = { ok: false, url: zenUrl, error: detail, hint };
+      }
+    }
+
+    const httpsOk = https.ok === true;
+    const anyTcpOk = tcp.some((entry) => entry.ok === true);
+    const verdict = httpsOk
+      ? 'reachable'
+      : dnsError
+        ? 'dns_failure'
+        : !anyTcpOk
+          ? 'tcp_blocked'
+          : 'tls_or_proxy_failure';
+
+    return sendJson(res, 200, {
+      ok: httpsOk,
+      verdict,
+      message: httpsOk
+        ? 'The bridge can reach the GitHub API from this machine.'
+        : dnsError
+          ? `DNS lookup failed for ${host}.`
+          : !anyTcpOk
+            ? 'Host resolves but no TCP connection to the API port succeeded.'
+            : 'TCP works but the HTTPS call failed (TLS interception or proxy).',
+      api_base: ghApiBase,
+      host,
+      port,
+      proxy: {
+        mode: 'bridge',
+        env_vars: ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy', 'NO_PROXY', 'no_proxy'].filter(
+          (name) => Boolean(process.env[name] && String(process.env[name]).trim())
+        ),
+      },
+      dns: { ok: !dnsError, addresses, error: dnsError },
+      tcp,
+      https,
+      token_present: Boolean(runtimeToken || envToken),
+    });
+  }
+
   const middleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     if (!req.url || !req.url.startsWith('/api/v1')) {
       return next();
@@ -223,6 +504,10 @@ export function createGitHubBridgePlugin(): Plugin {
     const jsonBody = rawBody ? (() => { try { return JSON.parse(rawBody); } catch { return {}; } })() : {};
 
     try {
+      if (method === 'GET' && route === '/diagnostics/connectivity') {
+        return probeConnectivity(res);
+      }
+
       if (method === 'GET' && route === '/health') {
         return sendJson(res, 200, {
           status: 'ok',
@@ -645,7 +930,7 @@ export function createGitHubBridgePlugin(): Plugin {
 
       return sendApiError(res, 404, 'API_ROUTE_NOT_FOUND', `Unknown API endpoint: ${method} ${route}`);
     } catch (err: any) {
-      return sendApiError(res, 500, 'INTERNAL_ERROR', err?.message || 'Unexpected bridge error');
+      return sendApiError(res, 500, 'INTERNAL_ERROR', describeNodeFetchError(err));
     }
   };
 

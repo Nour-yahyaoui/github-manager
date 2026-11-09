@@ -8,7 +8,11 @@ import {
   LogOut,
   Server,
   ShieldAlert,
+  Stethoscope,
+  XCircle,
 } from 'lucide-react';
+import { createApiClient } from '../../api/client';
+import type { ConnectivityReport } from '../../api/types';
 import { useApp } from '../../context/AppContext';
 
 export const TokenVaultPanel: React.FC = () => {
@@ -30,6 +34,21 @@ export const TokenVaultPanel: React.FC = () => {
   const [reveal, setReveal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [report, setReport] = useState<ConnectivityReport | null>(null);
+
+  const runDiagnostics = async () => {
+    setDiagnosing(true);
+    try {
+      const result = await createApiClient(false).getConnectivity();
+      setReport(result);
+    } catch (err: any) {
+      setReport(null);
+      pushToast('error', err?.message || 'Connectivity diagnostics failed to run.');
+    } finally {
+      setDiagnosing(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -223,6 +242,78 @@ export const TokenVaultPanel: React.FC = () => {
               )}
             </div>
           </form>
+        </div>
+      </section>
+
+      <section className="panel" aria-labelledby="diagnostics-heading">
+        <div className="panel-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+            <Stethoscope size={16} aria-hidden="true" />
+            <h2 id="diagnostics-heading">Connection Diagnostics</h2>
+          </div>
+          <button type="button" className="btn btn-sm" onClick={() => void runDiagnostics()} disabled={diagnosing}>
+            {diagnosing ? 'Probing GitHub…' : 'Run connection check'}
+          </button>
+        </div>
+        <div className="panel-body">
+          <p className="field-hint">
+            Tests DNS, TCP port 443, TLS and a real HTTPS call to the GitHub API from the machine
+            running this server — the exact path your token verification uses.
+          </p>
+          {report === null ? (
+            <p className="field-hint">No check has run yet in this session.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}>
+                {report.ok ? (
+                  <CheckCircle2 size={16} style={{ color: 'var(--success-text)' }} aria-hidden="true" />
+                ) : (
+                  <XCircle size={16} style={{ color: 'var(--danger-text)' }} aria-hidden="true" />
+                )}
+                <span>{report.ok ? 'GitHub API reachable' : `Failed: ${report.verdict}`}</span>
+              </div>
+              {report.message && <span style={{ color: 'var(--text-secondary)' }}>{report.message}</span>}
+              <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--text-secondary)' }}>
+                <li>
+                  API base: <code className="mono">{report.api_base}</code>
+                </li>
+                <li>
+                  Proxy mode: <code className="mono">{report.proxy.mode}</code>
+                  {report.proxy.env_vars.length > 0 && ` (${report.proxy.env_vars.join(', ')})`}
+                </li>
+                <li>
+                  DNS:{' '}
+                  {report.dns.ok
+                    ? report.dns.addresses.length > 0
+                      ? report.dns.addresses.join(', ')
+                      : 'resolved, no addresses returned'
+                    : `failed — ${report.dns.error}`}
+                </li>
+                <li>
+                  TCP 443:{' '}
+                  {report.tcp.length === 0
+                    ? 'not attempted'
+                    : report.tcp.map((entry) => `${entry.address} ${entry.ok ? `ok (${entry.ms} ms)` : `failed (${entry.error})`}`).join(' · ')}
+                </li>
+                <li>
+                  HTTPS:{' '}
+                  {report.https.ok
+                    ? `HTTP ${report.https.status} in ${report.https.ms} ms${
+                        report.https.via_system_ca
+                          ? ' (certificate accepted only via the OS trust store — TLS interception detected)'
+                          : ''
+                      }`
+                    : report.https.error}
+                </li>
+              </ul>
+              {report.https.hint && (
+                <div className="inline-alert" role="status" style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <ShieldAlert size={15} aria-hidden="true" />
+                  <span>{report.https.hint}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </section>
 

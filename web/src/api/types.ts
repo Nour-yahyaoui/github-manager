@@ -283,3 +283,40 @@ export interface AuditEntry {
   status: string;
   detail: string;
 }
+
+export interface ConnectivityTcpCheck {
+  address: string;
+  ok: boolean;
+  ms?: number;
+  error?: string;
+}
+
+export interface ConnectivityReport {
+  ok: boolean;
+  verdict: string;
+  message?: string;
+  api_base: string;
+  host?: string;
+  port?: number;
+  token_present?: boolean;
+  proxy: {
+    mode: string;
+    description?: string;
+    env_vars: string[];
+  };
+  dns: {
+    ok: boolean;
+    addresses: string[];
+    error?: string | null;
+  };
+  tcp: ConnectivityTcpCheck[];
+  https: {
+    ok: boolean;
+    status?: number;
+    ms?: number;
+    url?: string;
+    error?: string | null;
+    hint?: string | null;
+    via_system_ca?: boolean;
+  };
+}

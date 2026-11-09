@@ -6,6 +6,7 @@ import type {
   BulkActionPayload,
   BulkReposResponse,
   Collaborator,
+  ConnectivityReport,
   ContentEntry,
   CreateRepoInput,
   DecodedReadme,
@@ -86,6 +87,22 @@ export function createApiClient(isDemo: boolean, headerToken?: string) {
         };
       }
       return requestJson<HealthResponse>('/health', {}, headerToken);
+    },
+
+    getConnectivity: async (): Promise<ConnectivityReport> => {
+      if (isDemo) {
+        return {
+          ok: true,
+          verdict: 'sample_workspace',
+          message: 'The sample workspace never talks to GitHub, so there is nothing to diagnose.',
+          api_base: 'sample://in-memory',
+          proxy: { mode: 'none', env_vars: [] },
+          dns: { ok: true, addresses: [] },
+          tcp: [],
+          https: { ok: true, status: 200 },
+        };
+      }
+      return requestJson<ConnectivityReport>('/diagnostics/connectivity', {}, headerToken);
     },
 
     getAuthStatus: async (): Promise<AuthStatusResponse> => {

@@ -4,6 +4,7 @@ pub mod branches;
 pub mod bulk;
 pub mod collaborators;
 pub mod contents;
+pub mod diagnostics;
 pub mod health;
 pub mod issues;
 pub mod releases;
@@ -17,6 +18,7 @@ pub fn configure_api(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/api/v1")
             .service(health::health_check)
+            .service(diagnostics::connectivity)
             .service(auth::get_auth_status)
             .service(auth::set_session_token)
             .service(auth::clear_session_token)
