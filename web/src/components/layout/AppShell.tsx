@@ -61,6 +61,9 @@ export const AppShell: React.FC<AppShellProps> = ({
     exitDemoWorkspace,
     auth,
     authLoading,
+    accounts,
+    activeAccountId,
+    switchAccount,
     repos,
     reposLoading,
     selectedFullNames,
@@ -358,6 +361,15 @@ export const AppShell: React.FC<AppShellProps> = ({
           </div>
 
           <div className="top-header-actions">
+            {accounts.length > 0 && (
+              <label className="account-switcher">
+                <span>Account</span>
+                <select aria-label="Switch GitHub account" value={isDemo ? '' : activeAccountId || ''} onChange={(event) => switchAccount(event.target.value)}>
+                  {isDemo && <option value="">Sample workspace</option>}
+                  {accounts.map((account) => <option key={account.id} value={account.id}>@{account.login}{account.source === 'server' ? ' · server' : ''}</option>)}
+                </select>
+              </label>
+            )}
             <RateLimitMeter />
 
             {auth?.authenticated && (

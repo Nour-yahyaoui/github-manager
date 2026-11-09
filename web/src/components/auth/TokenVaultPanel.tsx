@@ -19,6 +19,10 @@ export const TokenVaultPanel: React.FC = () => {
     enterDemoWorkspace,
     connectPat,
     disconnectPat,
+    accounts,
+    activeAccountId,
+    switchAccount,
+    removeAccount,
     pushToast,
   } = useApp();
 
@@ -57,6 +61,22 @@ export const TokenVaultPanel: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 860 }}>
+      <section className="panel accounts-panel" aria-labelledby="accounts-heading">
+        <div className="panel-header"><div><span className="accounts-eyebrow">YOUR WORKSPACES</span><h2 id="accounts-heading">GitHub accounts</h2></div><span className="badge">{accounts.length} {accounts.length === 1 ? 'account' : 'accounts'}</span></div>
+        <div className="panel-body">
+          <p className="accounts-intro">Switch contexts without losing track of which account you are using. Session accounts stay in this tab’s memory until it is reloaded or closed.</p>
+          {accounts.length === 0 ? <p className="field-hint">No accounts added yet. Add a personal access token below, or explore the sample workspace.</p> : <ul className="accounts-list">{accounts.map((account) => {
+            const active = !isDemo && account.id === activeAccountId;
+            return <li className="account-row" key={account.id}>
+              <span className="account-avatar" aria-hidden="true">{account.login.slice(0, 1).toUpperCase()}</span>
+              <div className="account-details"><strong>@{account.login}</strong><span>{account.name || 'GitHub account'} · {account.source === 'server' ? 'server configured' : 'session only'}</span></div>
+              {active ? <span className="account-active"><CheckCircle2 size={14} aria-hidden="true" /> Active</span> : <button type="button" className="btn btn-sm" onClick={() => switchAccount(account.id)}>Switch to @{account.login}</button>}
+              {account.source === 'session' && <button type="button" className="btn btn-ghost btn-sm" aria-label={`Remove @${account.login}`} onClick={() => removeAccount(account.id)}>Remove</button>}
+            </li>;
+          })}</ul>}
+          <p className="accounts-security"><ShieldAlert size={15} aria-hidden="true" /> Tokens added here are not saved to disk. Removing an account does not revoke its token on GitHub. The server-configured account is managed through its environment or server session.</p>
+        </div>
+      </section>
       {auth?.authenticated && !isDemo && (
         <section className="panel" aria-labelledby="active-session-heading">
           <div className="panel-header">
@@ -132,7 +152,7 @@ export const TokenVaultPanel: React.FC = () => {
             <KeyRound size={17} aria-hidden="true" />
             <h2 id="connect-pat-heading">
               {auth?.authenticated && !isDemo
-                ? 'Switch or Update Personal Access Token'
+                ? 'Add or Update an Account'
                 : 'Connect GitHub Personal Access Token'}
             </h2>
           </div>
@@ -151,9 +171,7 @@ export const TokenVaultPanel: React.FC = () => {
         <div className="panel-body">
           <form onSubmit={(e) => void handleSubmit(e)} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <p className="field-hint" style={{ fontSize: 13 }}>
-              Your Personal Access Token is held only in local server memory (or loaded from your local{' '}
-              <code>.env</code> file via <code>GITHUB_PAT</code>) and transmitted solely to{' '}
-              <code>{auth?.api_base || 'https://api.github.com'}</code>.
+              Tokens added here stay in this browser tab’s memory and are sent to the local server with account requests. The server uses them to call <code>{auth?.api_base || 'https://api.github.com'}</code>. Reloading or closing the tab clears these accounts. Never expose this app to an untrusted network.
             </p>
 
             {error && (
@@ -191,7 +209,7 @@ export const TokenVaultPanel: React.FC = () => {
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <button type="submit" className="btn btn-primary" disabled={submitting}>
-                {submitting ? 'Verifying with GitHub…' : 'Verify & Connect Token'}
+                {submitting ? 'Verifying with GitHub…' : 'Verify & Add Account'}
               </button>
               {!isDemo && (
                 <button
