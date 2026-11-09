@@ -12,7 +12,7 @@ Built with Actix Web 4 (Rust) and React + TypeScript. Start at the landing page 
 
 ## Capabilities
 
-- **Token & Session Management**: Authenticate via `GITHUB_PAT` in `.env` or connect/switch tokens at runtime in the web UI. Inspect detected OAuth scopes (`X-OAuth-Scopes`), token source, and live GitHub REST API rate-limit quotas (`remaining / limit` + reset window).
+- **Multi-account workspaces**: Add GitHub accounts using PATs, switch from the header, and remove session accounts from Token & Connection. Each account request uses its own token; selections and repository data reset on switch. Inspect scopes and API quotas for the active account.
 - **Sample Workspace (Demo Data)**: Clearly badged in-memory sample mode to preview workflows before connecting a real Personal Access Token.
 - **Repository Ledger & Quick Edit**:
   - Filter by visibility (`Public`, `Private`), `Archived`, `Templates & Forks`, owner, language, or keyword (`/`); sort by push date, name, stars, open issues, or disk size.
@@ -81,9 +81,20 @@ npm run build
 cargo test
 ```
 
+### Working with multiple accounts
+
+1. Open **Token & Connection**, enter a PAT, and select **Verify & Add Account**. The app verifies its GitHub identity before switching.
+2. Add another PAT in the same panel. Re-adding a PAT for the same GitHub user replaces that user's session token.
+3. Use the **Account** selector in the header to switch, or remove a session account from the account list. Switching clears the current selection and reloads that account's repositories. An already-started request remains associated with the account that started it; it is not cancelled by switching.
+4. Accounts added in the UI exist only in the current browser tab's memory. Reloading or closing the tab requires adding those tokens again. Removing an account does not revoke its PAT; revoke it in GitHub if needed.
+
+A token configured on the server via `.env` or the legacy session API appears as a **server configured** account. It is managed on the server and cannot be removed through the session account list. Server configuration is shared across tabs; avoid changing it while another tab is using it. The audit log is server-session-wide, not separated by account.
+
+GitHub Manager supports the operations listed above, not every GitHub feature. Available actions depend on token permissions, repository access, GitHub policies, and API limits.
+
 ## Security and operational notes
 
-- The runtime token is held in server process memory; a token set in `.env` is stored on disk. Do not commit or share `.env`. Clearing a runtime token does not remove a configured environment token.
+- PATs added through the account UI are held in browser-tab memory and sent in an `X-GitHub-Token` header to the local server for each account request. They are not stored in localStorage or on disk by the app; browser extensions or scripts with page access may still access them. Legacy runtime tokens are held in server process memory; a token set in `.env` is stored on disk. Do not commit or share `.env`. Clearing a server runtime token does not remove a configured environment token.
 - The API is intended for local use and does not provide multi-user authentication. Do not expose it or the Vite development server to untrusted networks. The server's CORS policy is not an authentication boundary.
 - Use the minimum token permissions and repository access required for your task. GitHub organization policies and token type may further restrict operations. Revoke a compromised token on GitHub.
 - Sample workspace data is in memory and is not a backup. The session audit log is operational history, not a durable security audit. Confirm destructive operations carefully.
@@ -145,7 +156,7 @@ cargo test
 
 ## UI/UX & Accessibility Design Notes
 
-Designed following the **AgencyOS-Inspired UI/UX Skill** adapted specifically to a developer repository control plane (*"Blueprint & Slate"*):
+Designed following the **AgencyOS-Inspired UI/UX Skill** adapted specifically to a developer repository control plane (*"Graphite & Electric Blue"*):
 - **Palette & Contrast**: Verified WCAG 2.2 AA contrast (`>= 4.5:1` for text, `>= 3.0:1` for interactive borders & focus indicators) across Light, Dark, and System themes (`web/src/__tests__/contrast.test.ts`), with synchronous pre-paint theme initialization to prevent FOUC.
 - **Typography**: Locally bundled `IBM Plex Sans` and `IBM Plex Mono` with `font-variant-numeric: tabular-nums` on counts, metrics, commit SHAs, sizes, and quota gauges.
 - **Semantics & Keyboard Access**: Skip link, visible `:focus-visible` outlines, keyboard shortcuts (`/`, `c`, `[`), focus-trapped modals with `Escape` and focus restoration, WAI-ARIA `tablist`/`tab`/`tabpanel` arrow-key navigation, icon+label status badges (never color-only), `prefers-reduced-motion` support, and safeguarded type-to-confirm destructive actions.
